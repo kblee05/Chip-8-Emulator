@@ -1,12 +1,17 @@
 #include <stdio.h>
-#include "chip8.h"
+#include <unistd.h>
+#include "emulator.h"
 
-int main()
+int main(int argc, char **argv)
 {
-    Chip8 chip;
+    if(argc != 2)
+        return 1;
 
-    init(&chip);
-    cycle(&chip);
+    Emulator emulator;
+    
+    init_emulator(&emulator, argv[1]);
 
+    run_emulator(&emulator);
+    
     return 0;
 }

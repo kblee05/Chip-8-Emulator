@@ -6,14 +6,35 @@
 #include "sdl.h"
 #include "chip8.h"
 
+#define FONTSET_START_ADDRESS 0x50
+
+const uint8_t chip8_fontset[80] = {
+    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+	0x20, 0x60, 0x20, 0x20, 0x70, // 1
+	0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+	0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+	0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+	0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+	0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+	0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+	0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+	0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+	0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+	0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+	0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+	0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+	0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+	0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+};
+
 #define START_LOCATION 0x200
 
-static void load_rom(Chip8 *chip);
+static void load_rom(Chip8 *chip, char *file);
 
 void
-init(Chip8 *chip)
+init(Chip8 *chip, char *file)
 {
-    load_rom(chip);
+    load_rom(chip, file);
     chip->pc = START_LOCATION;
     chip->sp = 0;
     chip->i = 0;
@@ -27,19 +48,18 @@ init(Chip8 *chip)
         chip->keypad[i] = 0;
     }
 
-    for(int i = 0; i < 32; i++)
-        for(int j = 0; j < 64 ; j++)
-            chip->display[i][j] = 0;
+    for(int i = 0; i < 32 * 64; i++)
+            chip->display[i] = 0;
+    
+    memcpy(&chip->memory[FONTSET_START_ADDRESS], chip8_fontset, sizeof(chip8_fontset));
 
     srand(time(NULL));
-
-    
 }
 
 static void
-load_rom(Chip8 *chip)
+load_rom(Chip8 *chip, char *file)
 {
-    FILE *file = fopen("rom.txt", "rom");
+    FILE *input = fopen(file, "rb");
 
     if(!file)
     {
@@ -47,13 +67,13 @@ load_rom(Chip8 *chip)
         return;
     }
 
-    fseek(file, 0, SEEK_END);
-    int size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    fseek(input, 0, SEEK_END);
+    int size = ftell(input);
+    fseek(input, 0, SEEK_SET);
 
-    fread(chip->memory[0x200], 1, size, file);
+    fread(&chip->memory[0x200], 1, size, input);
 
-    fclose(file);
+    fclose(input);
 }
 
 typedef void (*Chip8Handler)(Chip8 *, uint16_t);
@@ -100,9 +120,9 @@ cycle(Chip8 *chip)
     uint16_t opcode = (chip->memory[chip->pc] << 8) | chip->memory[chip->pc + 1];
     chip->pc += 2;
 
-    uint8_t nibble = (opcode & 0xF000) >> 12;
+    uint8_t msb4 = (opcode & 0xF000) >> 12;
 
-    main_table[nibble](chip, opcode);
+    main_table[msb4](chip, opcode);
 }
 
 static void op_00E0(Chip8 *chip);
@@ -585,10 +605,10 @@ op_Dnnn(Chip8 *chip, uint16_t opcode)
             int x_pos = (Vx + j) % 64;
             int y_pos = (Vy + i) % 32;
 
-            if(pixel && chip->display[y_pos][x_pos])
+            if(pixel && chip->display[y_pos * 64 + x_pos])
                 chip->v[0xF] = 1;
             
-            chip->display[y_pos][x_pos] ^= pixel;
+            chip->display[y_pos * 64 + x_pos] ^= pixel;
         }
     }
 }
@@ -654,6 +674,187 @@ op_ExA1(Chip8 *chip, uint16_t opcode)
 }
 
 
+static void op_Fx07(Chip8 *chip, uint16_t opcode);
+static void op_Fx0A(Chip8 *chip, uint16_t opcode);
+static void op_Fx15(Chip8 *chip, uint16_t opcode);
+static void op_Fx18(Chip8 *chip, uint16_t opcode);
+static void op_Fx1E(Chip8 *chip, uint16_t opcode);
+static void op_Fx29(Chip8 *chip, uint16_t opcode);
+static void op_Fx33(Chip8 *chip, uint16_t opcode);
+static void op_Fx55(Chip8 *chip, uint16_t opcode);
+static void op_Fx65(Chip8 *chip, uint16_t opcode);
 
+static void
+op_Fnnn(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t kk = opcode & 0x00FF;
 
+    switch(kk)
+    {
+        case 0x07: op_Fx07(chip, opcode); break;
+        case 0x0A: op_Fx0A(chip, opcode); break;
+        case 0x15: op_Fx15(chip, opcode); break; 
+        case 0x18: op_Fx18(chip, opcode); break;
+        case 0x1E: op_Fx1E(chip, opcode); break;
+        case 0x29: op_Fx29(chip, opcode); break;
+        case 0x33: op_Fx33(chip, opcode); break;
+        case 0x55: op_Fx55(chip, opcode); break;
+        case 0x65: op_Fx65(chip, opcode); break;
+        default:
+            perror("Unknown F-Series instruction");
+            return;
+    }
+}
 
+/*
+    Fx07 - LD Vx, DT
+    Set Vx = delay timer value.
+
+    The value of DT is placed into Vx.
+*/
+
+static void
+op_Fx07(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+
+    chip->v[x] = chip->delay_timer;
+}
+
+/*
+    Fx0A - LD Vx, K
+    Wait for a key press, store the value of the key in Vx.
+
+    All execution stops until a key is pressed, then the 
+    value of that key is stored in Vx.
+*/
+
+static void
+op_Fx0A(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+
+    for(int i = 0; i < 16; i++)
+        if(chip->keypad[i]){
+            chip->v[x] = i;
+            return;
+        }
+    
+    // no key pressed
+    chip->pc -= 2;
+}
+
+/*
+    Fx15 - LD DT, Vx
+    Set delay timer = Vx.
+
+    DT is set equal to the value of Vx.
+*/
+
+static void
+op_Fx15(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+
+    chip->delay_timer = chip->v[x];
+}
+
+/*
+    Fx18 - LD ST, Vx
+    Set sound timer = Vx.
+
+    ST is set equal to the value of Vx.
+*/
+
+static void
+op_Fx18(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+
+    chip->sound_timer = chip->v[x];
+}
+
+/*
+    Fx1E - ADD I, Vx
+    Set I = I + Vx.
+
+    The values of I and Vx are added, and the results are stored in I.
+*/
+
+static void
+op_Fx1E(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+
+    chip->i += chip->v[x];
+}
+
+/*
+    Fx29 - LD F, Vx
+    Set I = location of sprite for digit Vx.
+
+    The value of I is set to the location for the hexadecimal sprite 
+    corresponding to the value of Vx. See section 2.4, Display, for 
+    more information on the Chip-8 hexadecimal font.
+*/
+
+static void
+op_Fx29(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+    uint8_t digit = chip->v[x];
+
+    chip->i = FONTSET_START_ADDRESS + 5 * digit;
+}
+
+/*
+    Fx33 - LD B, Vx
+    Store BCD representation of Vx in memory locations I, I+1, and I+2.
+
+    The interpreter takes the decimal value of Vx, and places the 
+    hundreds digit in memory at location in I, the tens digit at 
+    location I+1, and the ones digit at location I+2.
+*/
+
+static void
+op_Fx33(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+    uint8_t Vx = chip->v[x];
+
+    chip->memory[chip->i] = Vx / 100;
+    chip->memory[chip->i + 1] = (Vx / 10) % 10;
+    chip->memory[chip->i + 2] = Vx % 10;
+}
+
+/*
+    Fx55 - LD [I], Vx
+    Store registers V0 through Vx in memory starting at location I.
+
+    The interpreter copies the values of registers V0 through Vx 
+    into memory, starting at the address in I.
+*/
+
+static void
+op_Fx55(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+
+    memcpy(&chip->memory[chip->i], chip->v, x + 1);    
+}
+
+/*
+    Fx65 - LD Vx, [I]
+    Read registers V0 through Vx from memory starting at location I.
+
+    The interpreter reads values from memory starting at 
+    location I into registers V0 through Vx.
+*/
+
+static void
+op_Fx65(Chip8 *chip, uint16_t opcode)
+{
+    uint8_t x = (opcode & 0x0F00) >> 8;
+
+    memcpy(chip->v, &chip->memory[chip->i], x + 1);   
+}

@@ -13,11 +13,11 @@ typedef struct
     uint16_t stack[16];
     uint8_t delay_timer;
     uint8_t sound_timer;
-    uint8_t display[32][64];
+    uint8_t display[32 * 64];
     uint8_t keypad[16];
 } Chip8;
 
-void init(Chip8 *chip);
+void init(Chip8 *chip, char *file);
 void cycle(Chip8 *chip);
 
 #endif
